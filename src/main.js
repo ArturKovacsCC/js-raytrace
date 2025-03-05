@@ -39,22 +39,83 @@ function subtractVectors(v1, v2) {
   return [v1[0] - v2[0], v1[1] - v2[1], v1[2] - v2[2]];
 }
 
+function addVectors(v1, v2) {
+  return [v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2]];
+}
+
 function vectorLength(v) {
   return Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+}
+
+function normalizeVec(vec) {
+  return multiplyByScalar(vec, 1 / vectorLength(vec));
 }
 
 function multiplyByScalar(v, scalar) {
   return [v[0] * scalar, v[1] * scalar, v[2] * scalar];
 }
 
-const sphere1Center = [0, 4, 0];
-const sphere1r = 1;
+function componentWiseMult(v1, v2) {
+  return [v1[0] * v2[0], v1[1] * v2[1], v1[2] * v2[2]];
+}
+
+function dotProduct(v1, v2) {
+  return v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
+}
+
+function reflectVector(incomingVector, normalVector) {
+  // Calculate the dot product of the incoming vector and the normal vector
+  const dot = dotProduct(incomingVector, normalVector);
+
+  // Calculate the reflected vector
+  const reflectedVector = [
+    incomingVector.x - 2 * dot * normalVector.x,
+    incomingVector.y - 2 * dot * normalVector.y,
+    incomingVector.z - 2 * dot * normalVector.z
+  ];
+
+  return reflectedVector;
+}
+
+const LARGE = 9000;
+
+//=================================
+// Scene
+// const sphere1Center = [0, 0, 0];
+// const sphere1r = 1;
+
+const spheres = [
+  {
+    center: [0, 0, 2],
+    r: 1,
+    color: [1, 0, 1],
+    reflect: false,
+  },
+  {
+    center: [4, 1, 0],
+    r: 2,
+    color: [0.2, 0.6, 1],
+    reflect: false,
+  },
+  {
+    center: [-3, 2, -1],
+    r: 2,
+    color: [1, 1, 1],
+    reflect: true,
+  },
+  {
+    center: [0, -LARGE, 0],
+    r: LARGE,
+    color: [1, 1, 1],
+    reflect: false,
+  },
+]
 
 const rayDir = [0, 0, -1];
-const rayStart = [0, 0, 5];
+const rayStart = [0, 1, 5];
 
-const t = raySphereIntersection(sphere1Center, sphere1r, rayDir, rayStart);
-console.log(t);
+const lightPos = [0, 10, 0];
+//=================================
 
 
 const canvas = document.querySelector("#canvas");
@@ -71,35 +132,85 @@ const height = canvas.height;
 const imageData = ctx.createImageData(width, height);
 imageData.data.set(pixelBytes, 0)
 
-const channelsPerPixel = 4;
-for (let y = 0; y < height; y++) {
-  const pixelY = (y / height) - 0.5;
-  for (let x = 0; x < width; x++) {
-    const pixelX = (x / width) - 0.5;
+function render() {
+  
+  for (let y = 0; y < height; y++) {
+    const pixelY = (y / height) - 0.5;
+    for (let x = 0; x < width; x++) {
+      const pixelX = (x / width) - 0.5;
+  
+      const pixelPos = [pixelX * 10, -pixelY * 10, 0];
+      
+      let rayDir = subtractVectors(pixelPos, rayStart);
+      rayDir = multiplyByScalar(rayDir, 1 / vectorLength(rayDir));
 
-    const pixelPos = [pixelX * 10, pixelY * 10, 0];
-
-    let rayDir = subtractVectors(pixelPos, rayStart);
-    rayDir = multiplyByScalar(rayDir, 1 / vectorLength(rayDir));
-
-    const t = raySphereIntersection(sphere1Center, sphere1r, rayDir, rayStart);
-    
-    let r = 0;
-    let g = 0;
-    let b = 0;
-    if (t == null) {
-      r = g = b = 0;
-    } else {
-      // console.log("not null");
-      r = g = b = 255;
+      const irradiance = getIrradiance(rayDir, rayStart, 0);
+      
+      const r = irradiance[0] * 255;
+      const g = irradiance[1] * 255;
+      const b = irradiance[2] * 255;
+  
+      imageData.data[(y * width + x) * 4 + 0] = r;
+      imageData.data[(y * width + x) * 4 + 1] = g;
+      imageData.data[(y * width + x) * 4 + 2] = b;
+      imageData.data[(y * width + x) * 4 + 3] = 255;
     }
-
-
-    imageData.data[(y * width + x) * 4 + 0] = r;
-    imageData.data[(y * width + x) * 4 + 1] = g;
-    imageData.data[(y * width + x) * 4 + 2] = b;
-    imageData.data[(y * width + x) * 4 + 3] = 255;
   }
+  
+  ctx.putImageData(imageData, 0, 0);
+}  
+
+
+function getIrradiance(rayDir, rayStart, depth) {
+  if (depth > 3) {
+    return [0, 0, 0];
+  }
+  let nearestHitPoint = null;
+  let nearestDist = Infinity;
+
+  for (const sphere of spheres) {
+    const t = raySphereIntersection(sphere.center, sphere.r, rayDir, rayStart);
+
+    if (t != null) {
+      const hitPos = addVectors(multiplyByScalar(rayDir, t), rayStart);
+      if (t > 0 && t < nearestDist) {
+        nearestDist = t;
+        nearestHitPoint = {
+          normal: normalizeVec(subtractVectors(hitPos, sphere.center)),
+          pos: hitPos,
+          color: sphere.color,
+          reflect: sphere.reflect
+        };
+      }
+    }
+  }
+
+  let irradiance = [0, 0, 0];
+
+  if (nearestHitPoint != null) {
+    const hitPos = nearestHitPoint.pos;
+    const normal = nearestHitPoint.normal;
+    const toLight = normalizeVec(subtractVectors(lightPos, hitPos));
+    const lightIntensity = Math.max(0, dotProduct(normal, toLight));
+
+    // console.log("not null");
+    let color = nearestHitPoint.color;
+    if (nearestHitPoint.reflect) {
+      const reflectDir = reflectVector(rayDir, nearestHitPoint.normal);
+      const newStart = addVectors(nearestHitPoint.pos, multiplyByScalar(reflectDir, 0.05));
+      irradiance = getIrradiance(reflectDir, newStart, depth + 1);
+      // irradiance = [1, 0, 0];
+    } else {
+      irradiance = multiplyByScalar(color, lightIntensity);
+    }
+  }
+  return irradiance;
 }
 
-ctx.putImageData(imageData, 0, 0);
+function updateScreen() {
+  spheres[0].center[1] = Math.sin(Date.now() / 300);
+  render();
+  window.requestAnimationFrame(updateScreen);
+}
+
+window.requestAnimationFrame(updateScreen)
