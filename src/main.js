@@ -69,9 +69,9 @@ function reflectVector(incomingVector, normalVector) {
 
   // Calculate the reflected vector
   const reflectedVector = [
-    incomingVector.x - 2 * dot * normalVector.x,
-    incomingVector.y - 2 * dot * normalVector.y,
-    incomingVector.z - 2 * dot * normalVector.z
+    incomingVector[0] - 2 * dot * normalVector[0],
+    incomingVector[1] - 2 * dot * normalVector[1],
+    incomingVector[2] - 2 * dot * normalVector[2]
   ];
 
   return reflectedVector;
@@ -160,11 +160,7 @@ function render() {
   ctx.putImageData(imageData, 0, 0);
 }  
 
-
-function getIrradiance(rayDir, rayStart, depth) {
-  if (depth > 3) {
-    return [0, 0, 0];
-  }
+function getNearestHitPoint(rayDir, rayStart) {
   let nearestHitPoint = null;
   let nearestDist = Infinity;
 
@@ -179,11 +175,21 @@ function getIrradiance(rayDir, rayStart, depth) {
           normal: normalizeVec(subtractVectors(hitPos, sphere.center)),
           pos: hitPos,
           color: sphere.color,
-          reflect: sphere.reflect
+          reflect: sphere.reflect,
+          distance: t
         };
       }
     }
   }
+
+  return nearestHitPoint;
+}
+
+function getIrradiance(rayDir, rayStart, depth) {
+  if (depth > 3) {
+    return [0, 0, 0];
+  }
+  let nearestHitPoint = getNearestHitPoint(rayDir, rayStart);
 
   let irradiance = [0, 0, 0];
 
@@ -191,7 +197,13 @@ function getIrradiance(rayDir, rayStart, depth) {
     const hitPos = nearestHitPoint.pos;
     const normal = nearestHitPoint.normal;
     const toLight = normalizeVec(subtractVectors(lightPos, hitPos));
-    const lightIntensity = Math.max(0, dotProduct(normal, toLight));
+    const lightDistance = vectorLength(subtractVectors(lightPos, hitPos));
+    const offsetHitPos = addVectors(hitPos, multiplyByScalar(toLight, 0.01));
+    const nearestHit = getNearestHitPoint(toLight, offsetHitPos);
+    const nearestHitDistance = nearestHit?.distance ?? Infinity;
+    const inShadow = nearestHitDistance < lightDistance;
+    const shadowFactor = inShadow ? 0 : 1;
+    const lightIntensity = shadowFactor * Math.max(0, dotProduct(normal, toLight));
 
     // console.log("not null");
     let color = nearestHitPoint.color;
